@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Диплом</title>
+<script>
+// A page of the site opened before the password: back to the password page, then to this page.
+(() => {
+  const path = location.pathname, at = path.indexOf('/s/');
+  const root = at >= 0 ? path.slice(0, at + 1) : location.hostname.endsWith('github.io') ? '/' + path.split('/')[1] + '/' : '/';
+  location.replace(root + (at >= 0 ? '?to=' + encodeURIComponent(decodeURIComponent(path.slice(at + 3)) + location.search) : ''));
+})();
+</script>

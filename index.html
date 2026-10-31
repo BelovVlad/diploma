@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Диплом</title>
+<style>
+:root{color-scheme:dark}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#0b1117;color:#e8ddd4;font:16px/1.45 "Bahnschrift","Roboto Condensed","Segoe UI",system-ui,sans-serif}
+main{width:min(360px,calc(100% - 32px));padding:28px;border:1px solid #2b343d;border-radius:14px;background:#0f161d}
+h1{margin:0 0 6px;font:600 22px "Bahnschrift","Roboto Condensed","Segoe UI",system-ui,sans-serif}p{margin:0 0 18px;color:#9aa4ac;font-size:14px}
+input,button{box-sizing:border-box;width:100%;height:44px;border-radius:9px;font:inherit}
+input{padding:0 12px;border:1px solid #2b343d;background:#080d12;color:inherit}input:focus{outline:2px solid #d64c50;outline-offset:1px}
+button{margin-top:12px;border:0;background:#d64c50;color:#fff;cursor:pointer}button:disabled{opacity:.6;cursor:wait}
+.error{margin:10px 0 0;color:#f0a0a0}.error:empty{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Диплом</h1>
+  <p>Введите пароль, чтобы открыть материалы.</p>
+  <form id="login">
+    <input type="password" name="password" autocomplete="current-password" placeholder="Пароль" required autofocus>
+    <p class="error" role="alert"></p>
+    <button>Открыть</button>
+  </form>
+</main>
+<script>
+// Files of this site are encrypted. The password never leaves the browser: it derives the key
+// (same scheme as site/scripts/crypto.mjs), and the service worker (sw.js) decrypts what pages request.
+(() => {
+  const form = document.getElementById('login'), error = form.querySelector('.error'), button = form.querySelector('button');
+  const encoder = new TextEncoder();
+  const fromBase64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+  const hex = buffer => [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+  // Only a path inside the site may be the target after login.
+  const to = new URLSearchParams(location.search).get('to') || '';
+  const target = /^[^/\\]/.test(to) && !/(^|\/)\.\.(\/|$)|:/.test(to.split('?')[0]) ? to : '';
+
+  async function derive(password) {
+    const { salt, iterations } = await (await fetch('crypto.json', { cache: 'no-cache' })).json();
+    const base = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const master = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromBase64(salt), iterations }, base, 256);
+    const hkdf = await crypto.subtle.importKey('raw', master, 'HKDF', false, ['deriveKey', 'deriveBits']);
+    const info = name => ({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(), info: encoder.encode(name) });
+    const key = await crypto.subtle.deriveKey(info('aes'), hkdf, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    return { key, notes: hex(await crypto.subtle.deriveBits(info('notes'), hkdf, 256)) };
+  }
+  async function check(key) {
+    const data = new Uint8Array(await (await fetch('m.bin', { cache: 'no-cache' })).arrayBuffer());
+    try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: data.subarray(0, 12), additionalData: encoder.encode('manifest') }, key, data.subarray(12)); }
+    catch { throw new Error('Неверный пароль'); }
+  }
+  async function hand(session) {
+    await navigator.serviceWorker.register('sw.js', { scope: './' });
+    const { active } = await navigator.serviceWorker.ready;
+    await new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = ({ data }) => data ? resolve() : reject(new Error('Не удалось сохранить вход'));
+      active.postMessage({ type: 'login', ...session }, [channel.port2]);
+    });
+  }
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (!('serviceWorker' in navigator) || !crypto.subtle) { error.textContent = 'Браузер не поддерживает расшифровку. Откройте сайт в Chrome, Edge, Firefox или Safari.'; return; }
+    button.disabled = true; error.textContent = ''; button.textContent = 'Проверяю…';
+    try {
+      const session = await derive(form.elements.password.value);
+      await check(session.key);
+      await hand(session);
+      location.replace('s/' + target);
+    } catch (e) {
+      error.textContent = e.message === 'Неверный пароль' ? e.message : 'Не получилось открыть: ' + e.message;
+      button.disabled = false; button.textContent = 'Открыть';
+    }
+  };
+})();
+</script>
+</body>
+</html>
