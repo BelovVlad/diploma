@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Диплом</title>
+<style>
+:root{--bg:#080d12;--panel:#0e151c;--line:#25303a;--text:#f1ede7;--muted:#8a949c;--cream:#ead4b7;--accent:#d64c50;color-scheme:dark}
+body{margin:0;min-height:100dvh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:16px/1.45 "Bahnschrift","Roboto Condensed","Segoe UI",system-ui,sans-serif}
+.sky{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+main{position:relative;isolation:isolate;overflow:hidden;width:min(380px,calc(100% - 32px));box-sizing:border-box;padding:30px;border:1px solid var(--line);border-radius:14px;background:rgba(14,21,28,.84);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.dots-canvas{position:absolute;inset:0;z-index:-1;width:100%;height:100%;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s ease}
+.dots-hot>.dots-canvas,.dots-on>.dots-canvas{opacity:1}
+.eyebrow{display:block;margin-bottom:10px;color:var(--cream);font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.7}
+h1{margin:0 0 6px;font:600 24px "Bahnschrift","Roboto Condensed","Segoe UI",system-ui,sans-serif}p{margin:0 0 20px;color:var(--muted);font-size:14px}
+input,button{box-sizing:border-box;width:100%;height:46px;border-radius:9px;font:inherit}
+input{padding:0 14px;border:1px solid var(--line);background:var(--bg);color:inherit;letter-spacing:.08em}input:focus{outline:2px solid var(--accent);outline-offset:1px}
+/* The browser's autofill paints the field light blue; keep it the page's colour. */
+input::selection{background:rgba(214,76,80,.5);color:#fff}
+input:-webkit-autofill{-webkit-box-shadow:0 0 0 40px var(--bg) inset;-webkit-text-fill-color:var(--text);caret-color:var(--text)}
+button{margin-top:12px;border:0;background:var(--accent);color:#fff;cursor:pointer;transition:filter .2s}button:hover{filter:brightness(1.08)}button:disabled{cursor:wait;filter:saturate(.7) brightness(.85)}
+/* «Проверяю» is followed by three dots that come one by one while the key is derived (about a second). */
+.busy::after{content:"";display:inline-block;width:0;height:6px;margin-left:5px;vertical-align:middle;background:radial-gradient(circle,currentColor 1.7px,transparent 2.2px) 0 50%/7px 6px repeat-x;animation:wait 1.2s steps(4,jump-none) infinite}
+@keyframes wait{to{width:21px}}
+.error{margin:12px 0 0;color:#f0a0a0}.error:empty{display:none}
+.shake{animation:shake .42s cubic-bezier(.36,.07,.19,.97)}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+@media (prefers-reduced-motion:reduce){.shake,.busy::after{animation:none}.busy::after{width:21px}}
+</style>
+</head>
+<body>
+<canvas class="sky" aria-hidden="true"></canvas>
+<main>
+  <span class="eyebrow">Hyle</span>
+  <h1>Диплом</h1>
+  <p>Введите пароль, чтобы открыть материалы.</p>
+  <form id="login">
+    <input type="password" name="password" autocomplete="current-password" placeholder="Пароль" required autofocus>
+    <p class="error" role="alert"></p>
+    <button>Открыть</button>
+  </form>
+</main>
+<script src="dots.js"></script>
+<script>
+// The sky behind the card: the «Мерцание» wave of the shared dot engine (dots.js — its grid, speed and clock from
+// the settings of every Hyle site), brighter around the card. Rings of dots run out from the card while the password
+// is checked, and a red one when it is wrong. With reduced motion it is drawn once and stays still, without rings.
+const sky = (() => {
+  const canvas = document.querySelector('.sky'), card = document.querySelector('main'), dots = window.PwebDots;
+  if (!dots) return { ring() {} };
+  const ctx = canvas.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)'), probe = { x: -1e6, y: -1e6, on: false };
+  const rings = [];   // { at, red, life }: started at performance.now()
+  let width = 0, height = 0, drawnAt = -Infinity, running = false;
+  const draw = (time, now) => {
+    ctx.clearRect(0, 0, width, height);
+    const wave = dots.wave('twinkle'), scale = dots.settings.gap / 13, gap = 15 * scale, box = card.getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2, hw = box.width / 2, hh = box.height / 2;
+    for (let i = rings.length - 1; i >= 0; i--) if (now - rings[i].at > rings[i].life) rings.splice(i, 1);
+    probe.gap = gap;
+    for (let y = gap / 2; y < height; y += gap) for (let x = gap / 2; x < width; x += gap) {
+      // Distance from the card's edge (0 under the card).
+      const edge = Math.hypot(Math.max(Math.abs(x - cx) - hw, 0), Math.max(Math.abs(y - cy) - hh, 0));
+      let boost = 0, red = false;
+      for (const r of rings) {
+        const age = now - r.at, k = Math.exp(-(((edge - age * .5) / 28) ** 2)) * (1 - age / r.life);
+        boost += k; if (r.red && k > .3) red = true;
+      }
+      const d = wave.at(x, y, time, probe), s = Math.max(0, Math.min(1, d.s)), near = .3 + .5 * Math.exp(-edge / 260);
+      const alpha = Math.min(.95, (.14 + .8 * Math.sqrt(s)) * near * (d.a ?? 1) + boost * .7);
+      if (alpha < .03) continue;
+      ctx.fillStyle = `rgba(${red || d.red ? '214,76,80' : '234,212,183'},${alpha.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y, (.45 + 2 * s + 1.4 * Math.min(1, boost)) * scale, 0, Math.PI * 2); ctx.fill();
+    }
+  };
+  const moving = () => !still.matches && (dots.settings.show !== 'off' || rings.length > 0);
+  const loop = now => {
+    if (!moving()) { running = false; return; }
+    if (now - drawnAt >= 33) { draw(dots.clock(), now); drawnAt = now; }
+    requestAnimationFrame(loop);
+  };
+  const start = () => { if (!running && moving()) { running = true; requestAnimationFrame(loop); } };
+  const resize = () => {
+    const ratio = Math.min(2, devicePixelRatio || 1);
+    width = innerWidth; height = innerHeight;
+    canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    draw(dots.clock(), performance.now());
+  };
+  addEventListener('resize', resize); resize();
+  still.addEventListener('change', () => { draw(dots.clock(), performance.now()); start(); });
+  dots.onChange(() => { draw(dots.clock(), performance.now()); start(); });
+  start();
+  return { ring(red = false) { if (still.matches) return; rings.push({ at: performance.now(), red, life: red ? 1500 : 1800 }); start(); } };
+})();
+</script>
+<script>
+// Files of this site are encrypted. The password never leaves the browser: it derives the key
+// (same scheme as site/scripts/crypto.mjs), and the service worker (sw.js) decrypts what pages request.
+(() => {
+  const form = document.getElementById('login'), error = form.querySelector('.error'), button = form.querySelector('button');
+  const encoder = new TextEncoder();
+  const fromBase64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+  const hex = buffer => [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+  // Only a path inside the site may be the target after login.
+  const to = new URLSearchParams(location.search).get('to') || '';
+  const target = /^[^/\\]/.test(to) && !/(^|\/)\.\.(\/|$)|:/.test(to.split('?')[0]) ? to : '';
+
+  async function derive(password) {
+    const { salt, iterations } = await (await fetch('crypto.json', { cache: 'no-cache' })).json();
+    const base = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const master = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromBase64(salt), iterations }, base, 256);
+    const hkdf = await crypto.subtle.importKey('raw', master, 'HKDF', false, ['deriveKey', 'deriveBits']);
+    const info = name => ({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(), info: encoder.encode(name) });
+    const key = await crypto.subtle.deriveKey(info('aes'), hkdf, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    return { key, notes: hex(await crypto.subtle.deriveBits(info('notes'), hkdf, 256)) };
+  }
+  async function check(key) {
+    const data = new Uint8Array(await (await fetch('m.bin', { cache: 'no-cache' })).arrayBuffer());
+    try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: data.subarray(0, 12), additionalData: encoder.encode('manifest') }, key, data.subarray(12)); }
+    catch { throw new Error('Неверный пароль'); }
+  }
+  async function hand(session) {
+    await navigator.serviceWorker.register('sw.js', { scope: './' });
+    const { active } = await navigator.serviceWorker.ready;
+    await new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = ({ data }) => data ? resolve() : reject(new Error('Не удалось сохранить вход'));
+      active.postMessage({ type: 'login', ...session }, [channel.port2]);
+    });
+  }
+  const card = document.querySelector('main');
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (!('serviceWorker' in navigator) || !crypto.subtle) { error.textContent = 'Браузер не поддерживает расшифровку. Откройте сайт в Chrome, Edge, Firefox или Safari.'; return; }
+    button.disabled = true; error.textContent = ''; button.textContent = 'Проверяю'; button.classList.add('busy');
+    // While the key is derived (about a second), rings of dots run out from the card.
+    sky.ring(); const rings = setInterval(() => sky.ring(), 650);
+    try {
+      const session = await derive(form.elements.password.value);
+      await check(session.key);
+      await hand(session);
+      clearInterval(rings);
+      location.replace('s/' + target);
+    } catch (e) {
+      clearInterval(rings); sky.ring(true);
+      card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+      error.textContent = e.message === 'Неверный пароль' ? e.message : 'Не получилось открыть: ' + e.message;
+      button.disabled = false; button.textContent = 'Открыть'; button.classList.remove('busy');
+      form.elements.password.select();
+    }
+  };
+})();
+</script>
+</body>
+</html>
